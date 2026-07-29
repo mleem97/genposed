@@ -59,10 +59,10 @@ export function readFieldValue(source: string, selectedService: string, field: C
   if (errors.length > 0) return undefined;
 
   const node = document.getIn(getFieldPath(selectedService, field), true) as
-    | { toJSON(): unknown }
+    | { toJS(doc: ParsedDocument): unknown }
     | undefined;
 
-  return node?.toJSON() as ComposeValue | undefined;
+  return node?.toJS(document) as ComposeValue | undefined;
 }
 
 export function writeFieldValue(
