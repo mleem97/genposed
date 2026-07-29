@@ -86,6 +86,7 @@ export function ComposeFileWorkspacePanel() {
     }));
 
     const capturedWorkspace = captureCurrentContent();
+    const hadActiveFile = Boolean(capturedWorkspace.activeFileId);
     let nextWorkspace = upsertWorkspaceFiles(capturedWorkspace, importedFiles);
 
     if (!nextWorkspace.activeFileId && importedFiles[0]) {
@@ -102,6 +103,14 @@ export function ComposeFileWorkspacePanel() {
       `${importedFiles.length} Compose file${importedFiles.length === 1 ? "" : "s"} imported`
       + (rejectedFiles.length > 0 ? `; ${rejectedFiles.length} ignored` : ""),
     );
+
+    if (!hadActiveFile && nextWorkspace.activeFileId) {
+      const nextActiveFile = nextWorkspace.files.find((file) => file.id === nextWorkspace.activeFileId);
+      if (nextActiveFile) {
+        window.localStorage.setItem(ACTIVE_COMPOSE_CONTENT_KEY, nextActiveFile.content);
+        window.location.reload();
+      }
+    }
   }
 
   function activateFile(fileId: string) {
