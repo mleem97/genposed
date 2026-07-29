@@ -5,6 +5,7 @@ import { Button } from "@meyermedia/ui/primitives";
 import {
   asComposeValue,
   createBlankLike,
+  type ComposeScalar,
   type ComposeValue,
   uniqueMapKey,
 } from "@/lib/compose-document";
@@ -26,11 +27,10 @@ interface ValueNodeEditorProps {
   onChange: (value: ComposeValue) => void;
 }
 
-function valueType(value: ComposeValue): string {
-  if (Array.isArray(value)) return "list";
-  if (value === null) return "null";
-  if (typeof value === "object") return "map";
-  return typeof value;
+interface ScalarEditorProps {
+  value: ComposeScalar;
+  label?: string;
+  onChange: (value: ComposeValue) => void;
 }
 
 function renameMapKey(
@@ -45,13 +45,7 @@ function renameMapKey(
   );
 }
 
-function ScalarEditor({
-  value,
-  label,
-  onChange,
-}: Pick<ValueNodeEditorProps, "value" | "label" | "onChange">) {
-  const type = valueType(value);
-
+function ScalarEditor({ value, label, onChange }: ScalarEditorProps) {
   if (typeof value === "boolean") {
     return (
       <label className="structured-scalar">
@@ -60,6 +54,7 @@ function ScalarEditor({
           <option value="true">true</option>
           <option value="false">false</option>
         </select>
+        <small>boolean</small>
       </label>
     );
   }
@@ -68,11 +63,8 @@ function ScalarEditor({
     return (
       <label className="structured-scalar">
         {label ? <span>{label}</span> : null}
-        <input
-          type="number"
-          value={value}
-          onChange={(event) => onChange(Number(event.target.value))}
-        />
+        <input type="number" value={value} onChange={(event) => onChange(Number(event.target.value))} />
+        <small>number</small>
       </label>
     );
   }
@@ -93,11 +85,15 @@ function ScalarEditor({
     <label className="structured-scalar">
       {label ? <span>{label}</span> : null}
       {isMultiline ? (
-        <textarea value={value} rows={Math.min(10, Math.max(3, value.split("\n").length + 1))} onChange={(event) => onChange(event.target.value)} />
+        <textarea
+          value={value}
+          rows={Math.min(10, Math.max(3, value.split("\n").length + 1))}
+          onChange={(event) => onChange(event.target.value)}
+        />
       ) : (
         <input type="text" value={value} onChange={(event) => onChange(event.target.value)} />
       )}
-      <small>{type}</small>
+      <small>string</small>
     </label>
   );
 }
@@ -113,10 +109,7 @@ function ListEditor({ value, template, label, depth = 0, onChange }: ValueNodeEd
           <strong>{label ?? "List"}</strong>
           <span>{value.length} Einträge</span>
         </div>
-        <button
-          type="button"
-          onClick={() => onChange([...value, createBlankLike(itemTemplate)])}
-        >
+        <button type="button" onClick={() => onChange([...value, createBlankLike(itemTemplate)])}>
           + Zeile
         </button>
       </div>
@@ -213,7 +206,9 @@ function MapEditor({
               className="structured-remove"
               type="button"
               aria-label={`${key} entfernen`}
-              onClick={() => onChange(Object.fromEntries(Object.entries(value).filter(([entryKey]) => entryKey !== key)))}
+              onClick={() => onChange(
+                Object.fromEntries(Object.entries(value).filter(([entryKey]) => entryKey !== key)),
+              )}
             >
               ×
             </button>
