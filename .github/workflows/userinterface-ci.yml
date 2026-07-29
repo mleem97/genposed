@@ -1,6 +1,7 @@
 name: Userinterface CI
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - "userinterface/**"
@@ -22,24 +23,30 @@ concurrency:
 
 jobs:
   verify:
+    name: Typecheck and build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: "true"
     defaults:
       run:
         working-directory: userinterface
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11.15.1
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Enable Corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.15.1 --activate
+          node --version
+          pnpm --version
 
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
@@ -47,5 +54,5 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Build
+      - name: Build production application
         run: pnpm build
