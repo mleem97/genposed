@@ -59,7 +59,10 @@ export function ComposeFileWorkspacePanel() {
     const content = window.localStorage.getItem(ACTIVE_COMPOSE_CONTENT_KEY) ?? "services: {}\n";
     const capturedFile = createWorkspaceFile("compose.yaml", content);
     const nextWorkspace = upsertWorkspaceFiles(captureCurrentContent(), [capturedFile]);
-    const selectedWorkspace = selectWorkspaceFile(nextWorkspace, capturedFile.id);
+    const storedFile = nextWorkspace.files.find((file) => file.name.toLowerCase() === "compose.yaml");
+    const selectedWorkspace = storedFile
+      ? selectWorkspaceFile(nextWorkspace, storedFile.id)
+      : nextWorkspace;
     saveWorkspace(selectedWorkspace);
     setNotice("Current editor document captured as compose.yaml");
   }
@@ -86,7 +89,12 @@ export function ComposeFileWorkspacePanel() {
     let nextWorkspace = upsertWorkspaceFiles(capturedWorkspace, importedFiles);
 
     if (!nextWorkspace.activeFileId && importedFiles[0]) {
-      nextWorkspace = selectWorkspaceFile(nextWorkspace, importedFiles[0].id);
+      const storedImportedFile = nextWorkspace.files.find(
+        (file) => file.name.toLowerCase() === importedFiles[0].name.toLowerCase(),
+      );
+      if (storedImportedFile) {
+        nextWorkspace = selectWorkspaceFile(nextWorkspace, storedImportedFile.id);
+      }
     }
 
     saveWorkspace(nextWorkspace);
