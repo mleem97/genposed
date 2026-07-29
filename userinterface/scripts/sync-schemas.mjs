@@ -96,7 +96,9 @@ function buildComposeFieldIndex(schema) {
   const rootProperties = schema.properties ?? {};
   const servicesNode = resolveSchemaNode(schema, rootProperties.services);
   const serviceNode = resolveSchemaNode(schema, servicesNode?.additionalProperties);
-  const buildNode = resolveSchemaNode(schema, schema.definitions?.build ?? schema.$defs?.build);
+  const serviceBuildNode = resolveSchemaNode(schema, serviceNode?.properties?.build);
+  const buildNode = serviceBuildNode
+    ?? resolveSchemaNode(schema, schema.definitions?.build ?? schema.$defs?.build);
 
   return {
     schemaId: schema.$id,
