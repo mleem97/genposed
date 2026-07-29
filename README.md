@@ -2,6 +2,7 @@
 Easy GUI Docker Compose File Editor built with Next.js  
 
 ## Planned features
+- GUI App for Linux, Windows and MacOS
 - Full Compose generation feature
 - Github-App to get all the values out of your Application(s) (Goal: Detect all Applications within a Project, MonoRepo Support etc.)
 - Coolify API Support (Full API Support)
