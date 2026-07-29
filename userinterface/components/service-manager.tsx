@@ -14,6 +14,7 @@ interface ServiceManagerProps {
   services: string[];
   selectedService: string;
   references: ServiceReference[];
+  disabled?: boolean;
   onSelect: (serviceName: string) => void;
   onCreate: (serviceName: string) => boolean;
   onRename: (serviceName: string) => boolean;
@@ -31,6 +32,7 @@ export function ServiceManager({
   services,
   selectedService,
   references,
+  disabled = false,
   onSelect,
   onCreate,
   onRename,
@@ -44,13 +46,15 @@ export function ServiceManager({
   const normalizedDraft = draftName.trim();
   const isDraftValid = SERVICE_NAME_PATTERN.test(normalizedDraft);
   const serviceExists = services.includes(normalizedDraft);
-  const canSubmit = isDraftValid && (
+  const canSubmit = !disabled && isDraftValid && (
     action === "rename"
       ? normalizedDraft === selectedService || !serviceExists
       : !serviceExists
   );
 
   function beginAction(nextAction: ServiceAction) {
+    if (disabled) return;
+
     setConfirmDelete(false);
     setAction(nextAction);
 
@@ -90,6 +94,8 @@ export function ServiceManager({
   }
 
   function deleteSelectedService() {
+    if (disabled) return;
+
     const succeeded = onDelete(references.length > 0);
     if (succeeded) setConfirmDelete(false);
   }
@@ -104,13 +110,17 @@ export function ServiceManager({
         <span>{services.length}</span>
       </div>
 
+      {disabled ? (
+        <p className="service-manager-disabled">Service-Aktionen sind gesperrt, bis die YAML-Syntax korrigiert wurde.</p>
+      ) : null}
+
       <label className="service-selector" htmlFor="managed-service-select">
         <span>Aktiver Service</span>
         <select
           id="managed-service-select"
           value={selectedService}
           onChange={(event) => selectService(event.target.value)}
-          disabled={services.length === 0}
+          disabled={disabled || services.length === 0}
         >
           {services.length === 0 ? <option value="">Keine Services</option> : null}
           {services.map((service) => (
@@ -120,9 +130,9 @@ export function ServiceManager({
       </label>
 
       <div className="service-actions">
-        <button type="button" onClick={() => beginAction("create")}>Neu</button>
-        <button type="button" onClick={() => beginAction("rename")} disabled={!selectedService}>Umbenennen</button>
-        <button type="button" onClick={() => beginAction("clone")} disabled={!selectedService}>Klonen</button>
+        <button type="button" onClick={() => beginAction("create")} disabled={disabled}>Neu</button>
+        <button type="button" onClick={() => beginAction("rename")} disabled={disabled || !selectedService}>Umbenennen</button>
+        <button type="button" onClick={() => beginAction("clone")} disabled={disabled || !selectedService}>Klonen</button>
         <button
           type="button"
           className="danger"
@@ -130,7 +140,7 @@ export function ServiceManager({
             setAction(null);
             setConfirmDelete(true);
           }}
-          disabled={!selectedService}
+          disabled={disabled || !selectedService}
         >
           Löschen
         </button>
@@ -149,6 +159,7 @@ export function ServiceManager({
                 if (event.key === "Enter") submitAction();
                 if (event.key === "Escape") setAction(null);
               }}
+              disabled={disabled}
               autoFocus
             />
           </label>
@@ -188,7 +199,7 @@ export function ServiceManager({
 
           <div className="service-form-actions">
             <button type="button" onClick={() => setConfirmDelete(false)}>Abbrechen</button>
-            <button type="button" className="danger" onClick={deleteSelectedService}>
+            <button type="button" className="danger" onClick={deleteSelectedService} disabled={disabled}>
               {references.length > 0 ? "Löschen und bereinigen" : "Service löschen"}
             </button>
           </div>
