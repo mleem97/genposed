@@ -1,9 +1,10 @@
 "use client";
 
 import { Badge, Button, Input, NativeSelect } from "@meyermedia/ui/primitives";
-import { useDeferredValue, useEffect, useMemo, useState, useTransition } from "react";
-import { parseDocument } from "yaml";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 
+import { StructuredFieldEditor } from "@/components/structured-field-editor";
+import { YamlEditor } from "@/components/yaml-editor";
 import {
   categoryLabels,
   composeFields,
@@ -11,13 +12,22 @@ import {
   type ComposeField,
   type FieldCategory,
 } from "@/lib/catalog";
+import {
+  analyzeComposeDocument,
+  applyFieldSample,
+  isRecord,
+  readFieldValue,
+  removeFieldValue,
+  type ComposeValue,
+  writeFieldValue,
+} from "@/lib/compose-document";
 import { initialCompose } from "@/lib/sample-compose";
-import { YamlEditor } from "@/components/yaml-editor";
 
 const STORAGE_KEY = "genposed.compose.v1";
 const ALL_CATEGORIES = Object.keys(categoryLabels) as FieldCategory[];
 
 type DiagnosticTone = "error" | "warning" | "info";
+type EditorMode = "structured" | "yaml";
 
 interface Diagnostic {
   tone: DiagnosticTone;
@@ -25,70 +35,25 @@ interface Diagnostic {
   detail: string;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function setFieldValue(source: string, selectedService: string, field: ComposeField): string {
-  const document = parseDocument(source);
-  if (document.errors.length > 0) {
-    throw new Error("Das YAML muss zuerst syntaktisch gültig sein.");
-  }
-
-  const servicePath = ["services", selectedService];
-
-  if (field.target === "top-level") {
-    document.setIn(field.path, field.sample);
-    return document.toString({ lineWidth: 0 });
-  }
-
-  if (field.target === "service-labels" || field.target === "deploy-labels") {
-    const labelsPath =
-      field.target === "service-labels"
-        ? [...servicePath, "labels"]
-        : [...servicePath, "deploy", "labels"];
-
-    if (!isRecord(field.sample)) {
-      throw new Error("Das Feld enthält keine gültige Label-Map.");
-    }
-
-    for (const [key, value] of Object.entries(field.sample)) {
-      document.setIn([...labelsPath, key], value);
-    }
-
-    return document.toString({ lineWidth: 0 });
-  }
-
-  if (field.path.length === 0 && isRecord(field.sample)) {
-    for (const [key, value] of Object.entries(field.sample)) {
-      document.setIn([...servicePath, key], value);
-    }
-  } else {
-    document.setIn([...servicePath, ...field.path], field.sample);
-  }
-
-  return document.toString({ lineWidth: 0 });
-}
-
 function analyzeCompose(source: string): { services: string[]; diagnostics: Diagnostic[] } {
-  const document = parseDocument(source);
+  const parsed = analyzeComposeDocument(source);
   const diagnostics: Diagnostic[] = [];
 
-  for (const error of document.errors) {
-    diagnostics.push({ tone: "error", title: "YAML-Fehler", detail: error.message });
+  for (const error of parsed.errors) {
+    diagnostics.push({ tone: "error", title: "YAML-Fehler", detail: error });
   }
 
-  for (const warning of document.warnings) {
-    diagnostics.push({ tone: "warning", title: "YAML-Warnung", detail: warning.message });
+  for (const warning of parsed.warnings) {
+    diagnostics.push({ tone: "warning", title: "YAML-Warnung", detail: warning });
   }
 
-  if (document.errors.length > 0) {
+  if (parsed.errors.length > 0) {
     return { services: [], diagnostics };
   }
 
-  const value = document.toJS() as Record<string, unknown> | null;
+  const value = parsed.document.toJS() as Record<string, unknown> | null;
   const servicesValue = isRecord(value?.services) ? value.services : {};
-  const services = Object.keys(servicesValue);
+  const services = parsed.services;
 
   if (value && "version" in value) {
     diagnostics.push({
@@ -166,8 +131,8 @@ export function ComposeEditor() {
   const deferredQuery = useDeferredValue(query.trim().toLowerCase());
   const [selectedService, setSelectedService] = useState("web");
   const [selectedField, setSelectedField] = useState<ComposeField>(composeFields[0]);
+  const [editorMode, setEditorMode] = useState<EditorMode>("structured");
   const [notice, setNotice] = useState("Katalog bereit");
-  const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
     const persisted = window.localStorage.getItem(STORAGE_KEY);
@@ -213,17 +178,47 @@ export function ComposeEditor() {
   const errorCount = analysis.diagnostics.filter((item) => item.tone === "error").length;
   const warningCount = analysis.diagnostics.filter((item) => item.tone === "warning").length;
   const lineCount = yaml.split("\n").length;
+  const canEditSelectedField = selectedField.target === "top-level" || analysis.services.length > 0;
+
+  const selectedFieldValue = useMemo(() => {
+    if (!canEditSelectedField || errorCount > 0) return undefined;
+    return readFieldValue(yaml, selectedService, selectedField);
+  }, [canEditSelectedField, errorCount, selectedField, selectedService, yaml]);
+
+  function commitYaml(nextValue: string, message: string) {
+    setYaml(nextValue);
+    setNotice(message);
+  }
 
   function addSelectedField(field: ComposeField) {
     try {
-      const nextValue = setFieldValue(yaml, selectedService, field);
-      startTransition(() => {
-        setYaml(nextValue);
-        setSelectedField(field);
-        setNotice(`${field.title} wurde auf ${field.target === "top-level" ? "Projektebene" : selectedService} angewendet.`);
-      });
+      const nextValue = applyFieldSample(yaml, selectedService, field);
+      setSelectedField(field);
+      setEditorMode("structured");
+      commitYaml(
+        nextValue,
+        `${field.title} wurde auf ${field.target === "top-level" ? "Projektebene" : selectedService} angewendet.`,
+      );
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Feld konnte nicht eingefügt werden.");
+    }
+  }
+
+  function updateSelectedField(value: ComposeValue) {
+    try {
+      const nextValue = writeFieldValue(yaml, selectedService, selectedField, value);
+      commitYaml(nextValue, `${selectedField.title} wurde aktualisiert.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Feld konnte nicht aktualisiert werden.");
+    }
+  }
+
+  function removeSelectedField() {
+    try {
+      const nextValue = removeFieldValue(yaml, selectedService, selectedField);
+      commitYaml(nextValue, `${selectedField.title} wurde entfernt.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Feld konnte nicht entfernt werden.");
     }
   }
 
@@ -326,7 +321,7 @@ export function ComposeEditor() {
           </div>
         </aside>
 
-        <section className="editor-panel" aria-label="Compose YAML Editor">
+        <section className="editor-panel" aria-label="Compose Editor">
           <div className="editor-toolbar">
             <div className="document-tab">
               <span className="file-indicator" />
@@ -334,16 +329,59 @@ export function ComposeEditor() {
               <span className="dirty-indicator" title="Automatisch lokal gespeichert">autosave</span>
             </div>
             <div className="editor-toolbar-actions">
+              <div className="editor-mode-switch" aria-label="Bearbeitungsmodus">
+                <button
+                  type="button"
+                  className={editorMode === "structured" ? "active" : ""}
+                  onClick={() => setEditorMode("structured")}
+                >
+                  Felder
+                </button>
+                <button
+                  type="button"
+                  className={editorMode === "yaml" ? "active" : ""}
+                  onClick={() => setEditorMode("yaml")}
+                >
+                  YAML
+                </button>
+              </div>
               <button type="button" onClick={resetYaml}>Beispiel zurücksetzen</button>
               <button type="button" onClick={() => setYaml("")}>Leeren</button>
             </div>
           </div>
-          <div className="editor-canvas">
-            <YamlEditor value={yaml} onChange={setYaml} />
+
+          <div className={editorMode === "yaml" ? "editor-canvas" : "editor-canvas structured-canvas"}>
+            {editorMode === "yaml" ? (
+              <YamlEditor value={yaml} onChange={setYaml} />
+            ) : errorCount > 0 ? (
+              <div className="structured-field-empty">
+                <div className="structured-empty-icon">!</div>
+                <h3>Das YAML enthält Syntaxfehler</h3>
+                <p>Behebe die gemeldeten Fehler im YAML-Modus. Danach steht die sichere Feldbearbeitung wieder zur Verfügung.</p>
+                <Button type="button" onClick={() => setEditorMode("yaml")}>YAML öffnen</Button>
+              </div>
+            ) : !canEditSelectedField ? (
+              <div className="structured-field-empty">
+                <div className="structured-empty-icon">+</div>
+                <h3>Kein Service verfügbar</h3>
+                <p>Lege zuerst einen Service im Compose-Dokument an oder wähle ein Feld auf Projektebene.</p>
+                <Button type="button" onClick={() => setEditorMode("yaml")}>YAML öffnen</Button>
+              </div>
+            ) : (
+              <StructuredFieldEditor
+                fieldTitle={selectedField.title}
+                value={selectedFieldValue}
+                sample={selectedField.sample}
+                onChange={updateSelectedField}
+                onApplyExample={() => addSelectedField(selectedField)}
+                onRemove={removeSelectedField}
+              />
+            )}
           </div>
+
           <div className="editor-statusbar">
-            <span>YAML · UTF-8 · Spaces: 2</span>
-            <span>{isPending ? "Aktualisiere …" : notice}</span>
+            <span>{editorMode === "yaml" ? "YAML · UTF-8 · Spaces: 2" : "Strukturierter Compose-Feldeditor"}</span>
+            <span>{notice}</span>
           </div>
         </section>
 
@@ -386,10 +424,14 @@ export function ComposeEditor() {
           </div>
 
           <div className="inspector-action">
-            <Button type="button" onClick={() => addSelectedField(selectedField)} disabled={analysis.services.length === 0 && selectedField.target !== "top-level"}>
-              Feld anwenden
+            <Button
+              type="button"
+              onClick={() => addSelectedField(selectedField)}
+              disabled={analysis.services.length === 0 && selectedField.target !== "top-level"}
+            >
+              Beispiel anwenden
             </Button>
-            <p>Bestehende Werte am Zielpfad werden ersetzt; Label-Maps werden zusammengeführt.</p>
+            <p>Öffne „Felder“, um vorhandene Werte zeilenweise und ohne manuelle YAML-Einrückung zu bearbeiten.</p>
           </div>
 
           <div className="diagnostics">

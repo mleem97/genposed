@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { ThemeProvider } from "@meyermedia/ui/theme";
 
 import "./globals.css";
+import "./structured-editor.css";
 
 export const metadata: Metadata = {
   title: "Genposed — Compose Configuration Workbench",
