@@ -127,6 +127,28 @@ export function removeFieldValue(source: string, selectedService: string, field:
     throw new Error("Das YAML muss zuerst syntaktisch gültig sein.");
   }
 
+  const servicePath = ["services", selectedService];
+
+  if ((field.target === "service-labels" || field.target === "deploy-labels") && isRecord(field.sample)) {
+    const labelsPath = field.target === "service-labels"
+      ? [...servicePath, "labels"]
+      : [...servicePath, "deploy", "labels"];
+
+    for (const key of Object.keys(field.sample)) {
+      document.deleteIn([...labelsPath, key]);
+    }
+
+    return document.toString({ lineWidth: 0 });
+  }
+
+  if (field.target === "service" && field.path.length === 0 && isRecord(field.sample)) {
+    for (const key of Object.keys(field.sample)) {
+      document.deleteIn([...servicePath, key]);
+    }
+
+    return document.toString({ lineWidth: 0 });
+  }
+
   document.deleteIn(getFieldPath(selectedService, field));
   return document.toString({ lineWidth: 0 });
 }
