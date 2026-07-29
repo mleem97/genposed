@@ -5,6 +5,7 @@ import { ThemeProvider } from "@meyermedia/ui/theme";
 import "./globals.css";
 import "./structured-editor.css";
 import "./service-manager.css";
+import "./resource-manager.css";
 
 export const metadata: Metadata = {
   title: "Genposed — Compose Configuration Workbench",
