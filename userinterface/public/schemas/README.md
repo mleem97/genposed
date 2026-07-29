@@ -6,16 +6,42 @@ This directory is populated by the schema synchronization script:
 pnpm schema:sync
 ```
 
-Generated schema files are intentionally not committed by the initial prototype scaffold.
+Generated schema files are intentionally not committed by the prototype scaffold. Production builds should generate them from pinned and reviewed source revisions.
 
-## Sources
+## Generated files
 
-The synchronization process may collect:
+The synchronization process produces:
 
-- the official Compose Specification JSON Schema;
-- SchemaStore Compose variants used for compatibility comparison;
-- supplied documentation snapshots used by the field catalogue;
-- metadata needed to identify schema source, version, and retrieval time.
+- `compose-spec.json` — the official Compose Specification JSON Schema;
+- `docker-compose.schemastore.json` — the SchemaStore Compose variant used for comparison;
+- `compose-field-index.json` — a normalized index of top-level, service, and build fields generated from the official schema;
+- `manifest.json` — source URLs, byte sizes, and synchronization timestamps;
+- documentation snapshots under `source-docs/`.
+
+The generated field index records schema-derived information such as:
+
+- field scope and name;
+- JSON value types;
+- description;
+- default and example values;
+- enumerated values;
+- read-only, write-only, and deprecation markers where present.
+
+## Metadata boundaries
+
+The official schema remains the primary source for field structure, but it does not solve every compatibility question.
+
+Keep the following information in separate, versioned UI or capability metadata:
+
+- minimum Docker Compose version;
+- Docker Engine API requirements;
+- BuildKit and Buildx requirements;
+- Swarm-only behavior;
+- Traefik, Caddy, Coolify, and other platform extensions;
+- fields accepted by a provider but not portable Compose;
+- security and best-practice policy classification.
+
+Unknown compatibility must remain `unknown`; genposed must not silently assume support.
 
 ## Rules
 
@@ -26,10 +52,11 @@ The synchronization process may collect:
 - Record source URLs and retrieval timestamps for generated files.
 - Never place credentials, access tokens, or private provider documentation in this directory.
 - Generated files must be reproducible through `pnpm schema:sync`.
+- Review source revisions before using newly synchronized schemas in a release.
 
 ## Deployment validation
 
-JSON Schema validation is not sufficient to guarantee that a Compose project can run. Before deployment, genposed is intended to validate the rendered files through the target agent with the installed Compose implementation:
+JSON Schema validation is not sufficient to guarantee that a Compose project can run. Before deployment, genposed is intended to validate rendered files through the target agent with the installed Compose implementation:
 
 ```bash
 docker compose -f compose.yaml config --format json
