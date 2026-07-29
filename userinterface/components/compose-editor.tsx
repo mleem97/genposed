@@ -31,6 +31,7 @@ import { initialCompose } from "@/lib/sample-compose";
 
 const STORAGE_KEY = "genposed.compose.v1";
 const ALL_CATEGORIES = Object.keys(categoryLabels) as FieldCategory[];
+const DEFAULT_SERVICE_FIELD = composeFields.find((field) => field.id === "service.image") ?? composeFields[0];
 
 type DiagnosticTone = "error" | "warning" | "info";
 type EditorMode = "structured" | "yaml";
@@ -41,7 +42,13 @@ interface Diagnostic {
   detail: string;
 }
 
-function analyzeCompose(source: string): { services: string[]; diagnostics: Diagnostic[] } {
+interface ComposeAnalysis {
+  services: string[];
+  diagnostics: Diagnostic[];
+  syntaxErrorCount: number;
+}
+
+function analyzeCompose(source: string): ComposeAnalysis {
   const parsed = analyzeComposeDocument(source);
   const diagnostics: Diagnostic[] = [];
 
@@ -54,7 +61,11 @@ function analyzeCompose(source: string): { services: string[]; diagnostics: Diag
   }
 
   if (parsed.errors.length > 0) {
-    return { services: [], diagnostics };
+    return {
+      services: [],
+      diagnostics,
+      syntaxErrorCount: parsed.errors.length,
+    };
   }
 
   const value = parsed.document.toJS() as Record<string, unknown> | null;
@@ -125,7 +136,11 @@ function analyzeCompose(source: string): { services: string[]; diagnostics: Diag
     });
   }
 
-  return { services, diagnostics };
+  return {
+    services,
+    diagnostics,
+    syntaxErrorCount: 0,
+  };
 }
 
 function downloadCompose(source: string) {
@@ -163,6 +178,8 @@ export function ComposeEditor() {
   const analysis = useMemo(() => analyzeCompose(yaml), [yaml]);
 
   useEffect(() => {
+    if (analysis.syntaxErrorCount > 0) return;
+
     if (analysis.services.length === 0 && selectedService) {
       setSelectedService("");
       return;
@@ -171,7 +188,7 @@ export function ComposeEditor() {
     if (analysis.services.length > 0 && !analysis.services.includes(selectedService)) {
       setSelectedService(analysis.services[0]);
     }
-  }, [analysis.services, selectedService]);
+  }, [analysis.services, analysis.syntaxErrorCount, selectedService]);
 
   const filteredFields = useMemo(() => {
     return composeFields.filter((item) => {
@@ -201,14 +218,14 @@ export function ComposeEditor() {
   const canEditSelectedField = selectedField.target === "top-level" || hasSelectedService;
 
   const selectedFieldValue = useMemo(() => {
-    if (!canEditSelectedField || errorCount > 0) return undefined;
+    if (!canEditSelectedField || analysis.syntaxErrorCount > 0) return undefined;
     return readFieldValue(yaml, selectedService, selectedField);
-  }, [canEditSelectedField, errorCount, selectedField, selectedService, yaml]);
+  }, [analysis.syntaxErrorCount, canEditSelectedField, selectedField, selectedService, yaml]);
 
   const selectedServiceReferences = useMemo(() => {
-    if (!hasSelectedService || errorCount > 0) return [];
+    if (!hasSelectedService || analysis.syntaxErrorCount > 0) return [];
     return findServiceReferences(yaml, selectedService);
-  }, [errorCount, hasSelectedService, selectedService, yaml]);
+  }, [analysis.syntaxErrorCount, hasSelectedService, selectedService, yaml]);
 
   function commitYaml(nextValue: string, message: string) {
     setYaml(nextValue);
@@ -251,6 +268,7 @@ export function ComposeEditor() {
     try {
       const result = createService(yaml, serviceName);
       setSelectedService(result.serviceName);
+      setSelectedField(DEFAULT_SERVICE_FIELD);
       setEditorMode("structured");
       commitYaml(result.yaml, `Service ${result.serviceName} wurde angelegt.`);
       return true;
@@ -278,10 +296,12 @@ export function ComposeEditor() {
 
   function cloneComposeService(serviceName: string): boolean {
     try {
-      const result = cloneService(yaml, selectedService, serviceName);
+      const sourceService = selectedService;
+      const result = cloneService(yaml, sourceService, serviceName);
       setSelectedService(result.serviceName);
+      setSelectedField(DEFAULT_SERVICE_FIELD);
       setEditorMode("structured");
-      commitYaml(result.yaml, `${selectedService} wurde als ${result.serviceName} geklont.`);
+      commitYaml(result.yaml, `${sourceService} wurde als ${result.serviceName} geklont.`);
       return true;
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Service konnte nicht geklont werden.");
@@ -437,7 +457,7 @@ export function ComposeEditor() {
           <div className={editorMode === "yaml" ? "editor-canvas" : "editor-canvas structured-canvas"}>
             {editorMode === "yaml" ? (
               <YamlEditor value={yaml} onChange={setYaml} />
-            ) : errorCount > 0 ? (
+            ) : analysis.syntaxErrorCount > 0 ? (
               <div className="structured-field-empty">
                 <div className="structured-empty-icon">!</div>
                 <h3>Das YAML enthält Syntaxfehler</h3>
@@ -473,6 +493,7 @@ export function ComposeEditor() {
             services={analysis.services}
             selectedService={selectedService}
             references={selectedServiceReferences}
+            disabled={analysis.syntaxErrorCount > 0}
             onSelect={setSelectedService}
             onCreate={createComposeService}
             onRename={renameComposeService}
