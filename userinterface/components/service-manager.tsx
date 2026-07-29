@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ChangeEvent, type KeyboardEvent } from "react";
 
 import {
   SERVICE_NAME_PATTERN,
@@ -86,11 +86,20 @@ export function ServiceManager({
     }
   }
 
-  function selectService(serviceName: string) {
-    onSelect(serviceName);
+  function selectService(event: ChangeEvent<HTMLSelectElement>) {
+    onSelect(event.target.value);
     setAction(null);
     setDraftName("");
     setConfirmDelete(false);
+  }
+
+  function updateDraftName(event: ChangeEvent<HTMLInputElement>) {
+    setDraftName(event.target.value);
+  }
+
+  function handleDraftKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") submitAction();
+    if (event.key === "Escape") setAction(null);
   }
 
   function deleteSelectedService() {
@@ -119,7 +128,7 @@ export function ServiceManager({
         <select
           id="managed-service-select"
           value={selectedService}
-          onChange={(event) => selectService(event.target.value)}
+          onChange={selectService}
           disabled={disabled || services.length === 0}
         >
           {services.length === 0 ? <option value="">Keine Services</option> : null}
@@ -154,11 +163,8 @@ export function ServiceManager({
               id="service-name-input"
               type="text"
               value={draftName}
-              onChange={(event) => setDraftName(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") submitAction();
-                if (event.key === "Escape") setAction(null);
-              }}
+              onChange={updateDraftName}
+              onKeyDown={handleDraftKeyDown}
               disabled={disabled}
               autoFocus
             />
