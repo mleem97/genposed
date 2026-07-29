@@ -1,8 +1,9 @@
 "use client";
 
-import { Badge, Button, Input, NativeSelect } from "@meyermedia/ui/primitives";
+import { Badge, Button, Input } from "@meyermedia/ui/primitives";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 
+import { ServiceManager } from "@/components/service-manager";
 import { StructuredFieldEditor } from "@/components/structured-field-editor";
 import { YamlEditor } from "@/components/yaml-editor";
 import {
@@ -15,9 +16,14 @@ import {
 import {
   analyzeComposeDocument,
   applyFieldSample,
+  cloneService,
+  createService,
+  deleteService,
+  findServiceReferences,
   isRecord,
   readFieldValue,
   removeFieldValue,
+  renameService,
   type ComposeValue,
   writeFieldValue,
 } from "@/lib/compose-document";
@@ -25,6 +31,7 @@ import { initialCompose } from "@/lib/sample-compose";
 
 const STORAGE_KEY = "genposed.compose.v1";
 const ALL_CATEGORIES = Object.keys(categoryLabels) as FieldCategory[];
+const DEFAULT_SERVICE_FIELD = composeFields.find((field) => field.id === "service.image") ?? composeFields[0];
 
 type DiagnosticTone = "error" | "warning" | "info";
 type EditorMode = "structured" | "yaml";
@@ -35,7 +42,13 @@ interface Diagnostic {
   detail: string;
 }
 
-function analyzeCompose(source: string): { services: string[]; diagnostics: Diagnostic[] } {
+interface ComposeAnalysis {
+  services: string[];
+  diagnostics: Diagnostic[];
+  syntaxErrorCount: number;
+}
+
+function analyzeCompose(source: string): ComposeAnalysis {
   const parsed = analyzeComposeDocument(source);
   const diagnostics: Diagnostic[] = [];
 
@@ -48,7 +61,11 @@ function analyzeCompose(source: string): { services: string[]; diagnostics: Diag
   }
 
   if (parsed.errors.length > 0) {
-    return { services: [], diagnostics };
+    return {
+      services: [],
+      diagnostics,
+      syntaxErrorCount: parsed.errors.length,
+    };
   }
 
   const value = parsed.document.toJS() as Record<string, unknown> | null;
@@ -72,6 +89,14 @@ function analyzeCompose(source: string): { services: string[]; diagnostics: Diag
         tone: "error",
         title: `${serviceName}: Skalierungskonflikt`,
         detail: "container_name kann nicht sinnvoll mit mehreren Replikaten verwendet werden.",
+      });
+    }
+
+    if (!("image" in rawService) && !("build" in rawService)) {
+      diagnostics.push({
+        tone: "warning",
+        title: `${serviceName}: keine Image-Quelle`,
+        detail: "Der Service benötigt normalerweise image oder build, bevor er ausgeführt werden kann.",
       });
     }
 
@@ -111,7 +136,11 @@ function analyzeCompose(source: string): { services: string[]; diagnostics: Diag
     });
   }
 
-  return { services, diagnostics };
+  return {
+    services,
+    diagnostics,
+    syntaxErrorCount: 0,
+  };
 }
 
 function downloadCompose(source: string) {
@@ -149,10 +178,17 @@ export function ComposeEditor() {
   const analysis = useMemo(() => analyzeCompose(yaml), [yaml]);
 
   useEffect(() => {
+    if (analysis.syntaxErrorCount > 0) return;
+
+    if (analysis.services.length === 0 && selectedService) {
+      setSelectedService("");
+      return;
+    }
+
     if (analysis.services.length > 0 && !analysis.services.includes(selectedService)) {
       setSelectedService(analysis.services[0]);
     }
-  }, [analysis.services, selectedService]);
+  }, [analysis.services, analysis.syntaxErrorCount, selectedService]);
 
   const filteredFields = useMemo(() => {
     return composeFields.filter((item) => {
@@ -178,12 +214,18 @@ export function ComposeEditor() {
   const errorCount = analysis.diagnostics.filter((item) => item.tone === "error").length;
   const warningCount = analysis.diagnostics.filter((item) => item.tone === "warning").length;
   const lineCount = yaml.split("\n").length;
-  const canEditSelectedField = selectedField.target === "top-level" || analysis.services.length > 0;
+  const hasSelectedService = Boolean(selectedService && analysis.services.includes(selectedService));
+  const canEditSelectedField = selectedField.target === "top-level" || hasSelectedService;
 
   const selectedFieldValue = useMemo(() => {
-    if (!canEditSelectedField || errorCount > 0) return undefined;
+    if (!canEditSelectedField || analysis.syntaxErrorCount > 0) return undefined;
     return readFieldValue(yaml, selectedService, selectedField);
-  }, [canEditSelectedField, errorCount, selectedField, selectedService, yaml]);
+  }, [analysis.syntaxErrorCount, canEditSelectedField, selectedField, selectedService, yaml]);
+
+  const selectedServiceReferences = useMemo(() => {
+    if (!hasSelectedService || analysis.syntaxErrorCount > 0) return [];
+    return findServiceReferences(yaml, selectedService);
+  }, [analysis.syntaxErrorCount, hasSelectedService, selectedService, yaml]);
 
   function commitYaml(nextValue: string, message: string) {
     setYaml(nextValue);
@@ -219,6 +261,68 @@ export function ComposeEditor() {
       commitYaml(nextValue, `${selectedField.title} wurde entfernt.`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Feld konnte nicht entfernt werden.");
+    }
+  }
+
+  function createComposeService(serviceName: string): boolean {
+    try {
+      const result = createService(yaml, serviceName);
+      setSelectedService(result.serviceName);
+      setSelectedField(DEFAULT_SERVICE_FIELD);
+      setEditorMode("structured");
+      commitYaml(result.yaml, `Service ${result.serviceName} wurde angelegt.`);
+      return true;
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Service konnte nicht angelegt werden.");
+      return false;
+    }
+  }
+
+  function renameComposeService(serviceName: string): boolean {
+    try {
+      const previousName = selectedService;
+      const result = renameService(yaml, previousName, serviceName);
+      setSelectedService(result.serviceName);
+      commitYaml(
+        result.yaml,
+        `${previousName} wurde in ${result.serviceName} umbenannt; ${result.updatedReferences} Referenzen wurden angepasst.`,
+      );
+      return true;
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Service konnte nicht umbenannt werden.");
+      return false;
+    }
+  }
+
+  function cloneComposeService(serviceName: string): boolean {
+    try {
+      const sourceService = selectedService;
+      const result = cloneService(yaml, sourceService, serviceName);
+      setSelectedService(result.serviceName);
+      setSelectedField(DEFAULT_SERVICE_FIELD);
+      setEditorMode("structured");
+      commitYaml(result.yaml, `${sourceService} wurde als ${result.serviceName} geklont.`);
+      return true;
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Service konnte nicht geklont werden.");
+      return false;
+    }
+  }
+
+  function deleteComposeService(cleanupReferences: boolean): boolean {
+    try {
+      const deletedService = selectedService;
+      const result = deleteService(yaml, deletedService, cleanupReferences);
+      const nextServices = analyzeComposeDocument(result.yaml).services;
+      setSelectedService(nextServices[0] ?? "");
+      commitYaml(
+        result.yaml,
+        `${deletedService} wurde gelöscht; ${result.removedReferences} Referenzen wurden bereinigt.`,
+      );
+      return true;
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Service konnte nicht gelöscht werden.");
+      return false;
     }
   }
 
@@ -353,7 +457,7 @@ export function ComposeEditor() {
           <div className={editorMode === "yaml" ? "editor-canvas" : "editor-canvas structured-canvas"}>
             {editorMode === "yaml" ? (
               <YamlEditor value={yaml} onChange={setYaml} />
-            ) : errorCount > 0 ? (
+            ) : analysis.syntaxErrorCount > 0 ? (
               <div className="structured-field-empty">
                 <div className="structured-empty-icon">!</div>
                 <h3>Das YAML enthält Syntaxfehler</h3>
@@ -364,8 +468,7 @@ export function ComposeEditor() {
               <div className="structured-field-empty">
                 <div className="structured-empty-icon">+</div>
                 <h3>Kein Service verfügbar</h3>
-                <p>Lege zuerst einen Service im Compose-Dokument an oder wähle ein Feld auf Projektebene.</p>
-                <Button type="button" onClick={() => setEditorMode("yaml")}>YAML öffnen</Button>
+                <p>Lege rechts einen Service an oder wähle ein Feld auf Projektebene.</p>
               </div>
             ) : (
               <StructuredFieldEditor
@@ -385,28 +488,25 @@ export function ComposeEditor() {
           </div>
         </section>
 
-        <aside className="inspector-panel" aria-label="Feldinspektor">
+        <aside className="inspector-panel" aria-label="Compose-Inspektor">
+          <ServiceManager
+            services={analysis.services}
+            selectedService={selectedService}
+            references={selectedServiceReferences}
+            disabled={analysis.syntaxErrorCount > 0}
+            onSelect={setSelectedService}
+            onCreate={createComposeService}
+            onRename={renameComposeService}
+            onClone={cloneComposeService}
+            onDelete={deleteComposeService}
+          />
+
           <div className="panel-header inspector-heading">
             <div>
               <span className="panel-kicker">Inspector</span>
               <h2>{selectedField.title}</h2>
             </div>
             <Badge>{categoryLabels[selectedField.category]}</Badge>
-          </div>
-
-          <div className="inspector-section">
-            <label htmlFor="service-select">Zielservice</label>
-            <NativeSelect
-              id="service-select"
-              value={selectedService}
-              onChange={(event) => setSelectedService(event.target.value)}
-              disabled={analysis.services.length === 0}
-            >
-              {analysis.services.map((service) => (
-                <option key={service} value={service}>{service}</option>
-              ))}
-            </NativeSelect>
-            <p>Top-Level-Felder ignorieren diese Auswahl.</p>
           </div>
 
           <div className="inspector-section field-description">
