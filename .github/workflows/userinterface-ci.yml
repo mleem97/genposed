@@ -1,0 +1,51 @@
+name: Userinterface CI
+
+on:
+  pull_request:
+    paths:
+      - "userinterface/**"
+      - ".github/workflows/userinterface-ci.yml"
+  push:
+    branches:
+      - main
+      - in-dev-v1
+    paths:
+      - "userinterface/**"
+      - ".github/workflows/userinterface-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: userinterface-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: userinterface
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.15.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
