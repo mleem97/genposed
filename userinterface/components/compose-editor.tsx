@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge, Button, Input, NativeSelect } from "@meyermedia/ui/primitives";
-import { useDeferredValue, useEffect, useMemo, useState, useTransition } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 
 import { StructuredFieldEditor } from "@/components/structured-field-editor";
 import { YamlEditor } from "@/components/yaml-editor";
@@ -133,7 +133,6 @@ export function ComposeEditor() {
   const [selectedField, setSelectedField] = useState<ComposeField>(composeFields[0]);
   const [editorMode, setEditorMode] = useState<EditorMode>("structured");
   const [notice, setNotice] = useState("Katalog bereit");
-  const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
     const persisted = window.localStorage.getItem(STORAGE_KEY);
@@ -187,10 +186,8 @@ export function ComposeEditor() {
   }, [canEditSelectedField, errorCount, selectedField, selectedService, yaml]);
 
   function commitYaml(nextValue: string, message: string) {
-    startTransition(() => {
-      setYaml(nextValue);
-      setNotice(message);
-    });
+    setYaml(nextValue);
+    setNotice(message);
   }
 
   function addSelectedField(field: ComposeField) {
@@ -384,7 +381,7 @@ export function ComposeEditor() {
 
           <div className="editor-statusbar">
             <span>{editorMode === "yaml" ? "YAML · UTF-8 · Spaces: 2" : "Strukturierter Compose-Feldeditor"}</span>
-            <span>{isPending ? "Aktualisiere …" : notice}</span>
+            <span>{notice}</span>
           </div>
         </section>
 
