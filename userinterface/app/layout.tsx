@@ -8,6 +8,7 @@ import "./service-manager.css";
 import "./resource-manager.css";
 import "./schema-compatibility.css";
 import "./compose-file-workspace.css";
+import "./compose-policy.css";
 
 export const metadata: Metadata = {
   title: "Genposed — Compose Configuration Workbench",
