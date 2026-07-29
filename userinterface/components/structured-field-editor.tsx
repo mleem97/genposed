@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@meyermedia/ui/primitives";
+import type { ChangeEvent } from "react";
 
 import {
   asComposeValue,
@@ -14,9 +15,14 @@ interface StructuredFieldEditorProps {
   fieldTitle: string;
   value: ComposeValue | undefined;
   sample: unknown;
+  kicker?: string;
+  emptyDescription?: string;
+  applyLabel?: string;
+  restoreLabel?: string;
+  removeLabel?: string;
   onChange: (value: ComposeValue) => void;
   onApplyExample: () => void;
-  onRemove: () => void;
+  onRemove?: () => void;
 }
 
 interface ValueNodeEditorProps {
@@ -50,7 +56,10 @@ function ScalarEditor({ value, label, onChange }: ScalarEditorProps) {
     return (
       <label className="structured-scalar">
         {label ? <span>{label}</span> : null}
-        <select value={String(value)} onChange={(event) => onChange(event.target.value === "true")}>
+        <select
+          value={String(value)}
+          onChange={(event: ChangeEvent<HTMLSelectElement>) => onChange(event.target.value === "true")}
+        >
           <option value="true">true</option>
           <option value="false">false</option>
         </select>
@@ -63,7 +72,11 @@ function ScalarEditor({ value, label, onChange }: ScalarEditorProps) {
     return (
       <label className="structured-scalar">
         {label ? <span>{label}</span> : null}
-        <input type="number" value={value} onChange={(event) => onChange(Number(event.target.value))} />
+        <input
+          type="number"
+          value={value}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => onChange(Number(event.target.value))}
+        />
         <small>number</small>
       </label>
     );
@@ -88,10 +101,14 @@ function ScalarEditor({ value, label, onChange }: ScalarEditorProps) {
         <textarea
           value={value}
           rows={Math.min(10, Math.max(3, value.split("\n").length + 1))}
-          onChange={(event) => onChange(event.target.value)}
+          onChange={(event: ChangeEvent<HTMLTextAreaElement>) => onChange(event.target.value)}
         />
       ) : (
-        <input type="text" value={value} onChange={(event) => onChange(event.target.value)} />
+        <input
+          type="text"
+          value={value}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => onChange(event.target.value)}
+        />
       )}
       <small>string</small>
     </label>
@@ -189,7 +206,7 @@ function MapEditor({
                 <input
                   type="text"
                   value={key}
-                  onChange={(event) => onChange(renameMapKey(value, key, event.target.value))}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => onChange(renameMapKey(value, key, event.target.value))}
                 />
               </label>
             </div>
@@ -239,6 +256,11 @@ export function StructuredFieldEditor({
   fieldTitle,
   value,
   sample,
+  kicker = "Visueller Feldeditor",
+  emptyDescription = "Lege das Feld anhand der Compose-Vorlage an und bearbeite anschließend alle Werte zeilenweise.",
+  applyLabel = "Feld hinzufügen",
+  restoreLabel = "Beispiel wiederherstellen",
+  removeLabel = "Feld entfernen",
   onChange,
   onApplyExample,
   onRemove,
@@ -250,8 +272,8 @@ export function StructuredFieldEditor({
       <div className="structured-field-empty">
         <div className="structured-empty-icon">+</div>
         <h3>{fieldTitle} ist noch nicht konfiguriert</h3>
-        <p>Lege das Feld anhand der Compose-Vorlage an und bearbeite anschließend alle Werte zeilenweise.</p>
-        <Button type="button" onClick={onApplyExample}>Feld hinzufügen</Button>
+        <p>{emptyDescription}</p>
+        <Button type="button" onClick={onApplyExample}>{applyLabel}</Button>
       </div>
     );
   }
@@ -260,12 +282,14 @@ export function StructuredFieldEditor({
     <div className="structured-field-editor">
       <div className="structured-field-toolbar">
         <div>
-          <span>Visueller Feldeditor</span>
+          <span>{kicker}</span>
           <strong>{fieldTitle}</strong>
         </div>
         <div>
-          <button type="button" onClick={onApplyExample}>Beispiel wiederherstellen</button>
-          <button type="button" className="danger" onClick={onRemove}>Feld entfernen</button>
+          <button type="button" onClick={onApplyExample}>{restoreLabel}</button>
+          {onRemove ? (
+            <button type="button" className="danger" onClick={onRemove}>{removeLabel}</button>
+          ) : null}
         </div>
       </div>
 
