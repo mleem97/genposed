@@ -16,6 +16,7 @@ This directory contains the product, architecture, security, deployment, and ope
 | [Self-hosting](SELF_HOSTING.md) | Intended installation modes and operational requirements |
 | [Multi-tenancy](MULTI_TENANCY.md) | Evolution from a single workspace to isolated tenants |
 | [Roadmap](ROADMAP.md) | Proposed delivery phases and acceptance criteria |
+| [Requirements and delivery status](REQUIREMENTS_MATRIX.md) | Owner requirements, acceptance evidence, conflicts, and implementation status |
 | [Public references](REFERENCES.md) | Comparable open-source projects and official specifications |
 | [Architecture decisions](ADR/README.md) | Decision records and the reasoning behind major constraints |
 

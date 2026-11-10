@@ -160,6 +160,8 @@ Build-server failure must requeue builds that have not published immutable resul
 
 Proxy configuration is applied transactionally: write candidate configuration, validate it, activate it, then retain the previous known-good version for rollback.
 
-## Single-tenant now, multi-tenant later
+## Operator and customer scopes from the first usable release
 
-The first installation creates a default workspace and environment automatically. All persistent entities still carry a workspace identifier. Tenant-level encryption keys, quotas, network policy, builder isolation, and registry namespaces can later be introduced without changing primary identifiers.
+An installation has an operator scope and customer scopes from the first usable release. Each project and environment belongs to exactly one scope, and customer access is optional per customer. Every persistent entity and background job carries immutable scope identifiers. Authorization is enforced at service boundaries, and execution is rejected unless the selected target satisfies that scope's isolation policy. This does not authorize hostile workloads to share a rootful Docker daemon.
+
+Administration of multiple independent workspaces beyond this initial operator/customer model, tenant-level encryption keys, quotas, broader network policy, and additional builder and registry isolation remain later work. They extend the initial scopes rather than replace or defer them.

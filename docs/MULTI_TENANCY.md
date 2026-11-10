@@ -2,11 +2,11 @@
 
 ## Starting point
 
-The first release exposes one workspace and one primary environment. Users may operate several projects and servers within that workspace.
+The first usable release distinguishes operator-owned projects from customer-owned projects. The operator controls whether each customer receives UI access; customer access is scoped and permissioned. This initial model is required even for a single operator installation and does not imply that customer workloads can safely share a runtime host.
 
 Internally, persistent resources use a workspace identifier from the beginning.
 
-## Future tenant boundary
+## Expanded tenant boundary
 
 A tenant owns:
 
@@ -75,13 +75,11 @@ Potential quotas:
 - runner concurrency;
 - domains and certificates.
 
-## Migration plan
+## Implementation sequence
 
-1. Introduce workspace scope in the single-tenant schema.
-2. Centralize authorization checks.
-3. Add tenant-specific encryption data keys.
-4. Add quotas and usage accounting.
-5. Isolate builders and caches.
-6. Add tenant administration and invitations.
-7. Add dedicated-runtime placement.
-8. Perform external security review before public hosted access.
+1. Implement operator/customer project scopes and central authorization checks before enabling customer actions.
+2. Bind eligible runtime targets to policy; reject deployment when no target meets it. Prefer dedicated servers or VMs for untrusted customer workloads.
+3. Add tenant-specific encryption data keys, quotas, and usage accounting.
+4. Isolate builders, caches, runners, and registry namespaces before sharing those resources across independent tenants.
+5. Add administration of independent workspaces beyond the initial operator/customer model.
+6. Perform external security review before public hosted access.

@@ -12,7 +12,7 @@ Build server
 └── provider-native runner containers
 ```
 
-The first single-tenant installation may use one persistent builder. The same model scales to multiple tenants and multiple servers.
+An installation may use one persistent builder for one trust scope. Distinct customer scopes must not share builder state by default; the later multi-server scheduler can place isolated builders on shared capacity hosts.
 
 ## Build agent inventory
 
@@ -68,7 +68,7 @@ The scheduler reserves capacity before source transfer and releases it after cle
 
 ### Level 1: persistent rootless builder per tenant
 
-Appropriate for the first trusted single-tenant release and lower-risk hosted use.
+Appropriate for a trusted workload within one scope and lower-risk hosted use. It is not sufficient by itself to isolate hostile customer builds from one another.
 
 ### Level 2: ephemeral rootless builder per build
 

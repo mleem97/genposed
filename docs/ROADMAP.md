@@ -2,6 +2,8 @@
 
 The roadmap is ordered by architectural dependency, not marketing priority.
 
+The first usable release includes operator-owned and customer-owned projects, optional customer access, scoped basic customer actions, GitHub and Forgejo/Gitea sources, and Cloudflare DNS automation. Customer scope and enforceable target isolation are prerequisites for customer workloads; they are not deferred to Phase 8. Before any production-ready release, tested restoration of the control plane, keys, agent identity, and supported application data is mandatory. See the [requirements matrix](REQUIREMENTS_MATRIX.md) for acceptance evidence and open decisions.
+
 ## Phase 0 — Foundation and documentation
 
 - product scope and architecture;
@@ -12,7 +14,7 @@ The roadmap is ordered by architectural dependency, not marketing priority.
 - ADR process;
 - target license decision.
 
-**Exit criteria:** core trust boundaries and single-tenant assumptions are documented.
+**Exit criteria:** core trust boundaries, operator/customer project scopes, and the conditions that reject unsafe execution are documented.
 
 ## Phase 1 — Compose Studio prototype
 
@@ -40,7 +42,7 @@ The roadmap is ordered by architectural dependency, not marketing priority.
 - policy checks;
 - Traefik domain and middleware basics.
 
-**Exit criteria:** one self-hosted installation can safely deploy and manage one production environment.
+**Exit criteria:** one self-hosted installation can deploy and manage operator and customer projects with optional scoped customer access; supported customer workloads run only on verified eligible boundaries, and no eligible target means a safe rejection. Production readiness additionally requires the tested restore gate above.
 
 ## Phase 3 — Git provider hub
 
@@ -108,9 +110,9 @@ The roadmap is ordered by architectural dependency, not marketing priority.
 - registry management and scanning;
 - self-update workflow.
 
-## Phase 8 — Multi-tenancy
+## Phase 8 — Expanded multi-tenant operations
 
-- tenant administration;
+- administration of multiple independent workspaces/tenants beyond the initial operator-and-customer project scopes;
 - tenant encryption keys;
 - isolated builders, caches, runners, and registry namespaces;
 - quotas and usage;

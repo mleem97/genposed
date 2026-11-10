@@ -1,0 +1,625 @@
+# Genposed kitchen-sink reference
+#
+# This is a field catalogue, not a single universally deployable stack.
+# Several entries are mutually exclusive, platform-specific, experimental,
+# deprecated, or only consumed by Docker Compose, Swarm, Traefik, Caddy or Coolify.
+
+version: "3.9"
+name: genposed-kitchen-sink
+
+x-service-defaults: &service-defaults
+  init: true
+  restart: unless-stopped
+  stop_grace_period: 30s
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+x-security-defaults: &security-defaults
+  read_only: true
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+
+include:
+  - path: ./compose.observability.yaml
+    project_directory: .
+    env_file: .env.observability
+
+services:
+  web:
+    <<: [*service-defaults, *security-defaults]
+    image: ghcr.io/mleem97/genposed-web:${APP_TAG:-latest}
+    pull_policy: missing
+    platform: linux/amd64
+    attach: true
+    annotations:
+      example.com/description: Genposed Next.js frontend
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+      args:
+        NODE_VERSION: "22"
+        NEXT_TELEMETRY_DISABLED: "1"
+      additional_contexts:
+        ui: ../mm-ui
+        base: docker-image://node:22-alpine
+      cache_from:
+        - type=registry,ref=ghcr.io/mleem97/genposed-web:cache
+      cache_to:
+        - type=registry,ref=ghcr.io/mleem97/genposed-web:cache,mode=max
+      no_cache: false
+      no_cache_filter: [deps]
+      pull: true
+      privileged: false
+      provenance: mode=max
+      sbom: true
+      secrets:
+        - source: npm_token
+          target: npm_token
+      ssh: [default]
+      tags:
+        - ghcr.io/mleem97/genposed-web:latest
+      platforms: [linux/amd64, linux/arm64]
+      shm_size: 1g
+      extra_hosts:
+        - host.docker.internal=host-gateway
+      isolation: default
+      entitlements:
+        - network.host
+      ulimits:
+        nofile:
+          soft: 1024
+          hard: 2048
+    command: ["node", "server.js"]
+    entrypoint: ["/usr/bin/tini", "--"]
+    working_dir: /app
+    user: "1000:1000"
+    group_add: ["1001"]
+    hostname: web
+    domainname: internal.example
+    init: true
+    tty: false
+    stdin_open: false
+    stop_signal: SIGTERM
+    stop_grace_period: 30s
+    post_start:
+      - command: ["/bin/sh", "-lc", "echo web started"]
+        user: root
+    pre_stop:
+      - command: ["/bin/sh", "-lc", "echo web stopping"]
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      APP_URL: ${SERVICE_URL_WEB:-https://app.example.com}
+      APP_FQDN: ${SERVICE_FQDN_WEB:-app.example.com}
+      ADMIN_USER: ${SERVICE_USER_ADMIN:-admin}
+      ADMIN_PASSWORD: ${SERVICE_PASSWORD_ADMIN:?}
+    env_file:
+      - path: .env
+        required: false
+      - path: .env.production
+        required: false
+        format: raw
+    depends_on:
+      postgres:
+        condition: service_healthy
+        restart: true
+        required: true
+      redis:
+        condition: service_started
+        required: false
+    expose:
+      - "3000"
+    ports:
+      - name: http
+        target: 3000
+        published: "3000"
+        host_ip: 127.0.0.1
+        protocol: tcp
+        app_protocol: http
+        mode: host
+    networks:
+      app:
+        aliases: [frontend, next]
+        interface_name: eth0
+        ipv4_address: 172.28.0.10
+        link_local_ips: [169.254.1.10]
+        gw_priority: 100
+        priority: 1000
+      proxy:
+        aliases: [genposed]
+        priority: 2000
+    dns: [1.1.1.1, 8.8.8.8]
+    dns_search: [internal.example]
+    dns_opt: [use-vc]
+    extra_hosts:
+      host.docker.internal: host-gateway
+    labels:
+      org.opencontainers.image.title: Genposed Web
+      coolify.managed: "true"
+      coolify.applicationId: ${COOLIFY_APPLICATION_ID:-0}
+      coolify.type: application
+      traefik.enable: "true"
+      traefik.docker.network: proxy
+      traefik.http.routers.web.rule: Host(`app.example.com`) && PathPrefix(`/`)
+      traefik.http.routers.web.entrypoints: websecure
+      traefik.http.routers.web.service: web
+      traefik.http.routers.web.priority: "100"
+      traefik.http.routers.web.middlewares: secure-headers@docker,compress@docker,rate-limit@docker
+      traefik.http.routers.web.tls: "true"
+      traefik.http.routers.web.tls.certresolver: letsencrypt
+      traefik.http.routers.web.tls.domains[0].main: example.com
+      traefik.http.routers.web.tls.domains[0].sans: "*.example.com"
+      traefik.http.routers.web.observability.accesslogs: "true"
+      traefik.http.routers.web.observability.metrics: "true"
+      traefik.http.routers.web.observability.tracing: "true"
+      traefik.http.services.web.loadbalancer.server.port: "3000"
+      traefik.http.services.web.loadbalancer.server.scheme: http
+      traefik.http.services.web.loadbalancer.passhostheader: "true"
+      traefik.http.services.web.loadbalancer.healthcheck.path: /api/health
+      traefik.http.services.web.loadbalancer.healthcheck.interval: 10s
+      traefik.http.services.web.loadbalancer.healthcheck.timeout: 3s
+      traefik.http.services.web.loadbalancer.sticky.cookie: "true"
+      traefik.http.services.web.loadbalancer.sticky.cookie.name: genposed_session
+      traefik.http.middlewares.secure-headers.headers.framedeny: "true"
+      traefik.http.middlewares.secure-headers.headers.contenttypenosniff: "true"
+      traefik.http.middlewares.secure-headers.headers.stsseconds: "31536000"
+      traefik.http.middlewares.secure-headers.headers.stsincludesubdomains: "true"
+      traefik.http.middlewares.secure-headers.headers.stspreload: "true"
+      traefik.http.middlewares.compress.compress: "true"
+      traefik.http.middlewares.rate-limit.ratelimit.average: "100"
+      traefik.http.middlewares.rate-limit.ratelimit.burst: "50"
+      traefik.http.middlewares.retry.retry.attempts: "3"
+      traefik.http.middlewares.buffering.buffering.maxrequestbodybytes: "10485760"
+      traefik.http.middlewares.inflight.inflightreq.amount: "100"
+      traefik.http.middlewares.ipallow.ipallowlist.sourcerange: 10.0.0.0/8,192.168.0.0/16
+      caddy: app.example.com
+      caddy.reverse_proxy: "{{upstreams 3000}}"
+      caddy.encode: zstd gzip
+      caddy.header.Strict-Transport-Security: '"max-age=31536000; includeSubDomains; preload"'
+      caddy.@api.path: /api/*
+      caddy.route.0_handle: "@api"
+      caddy.route.0_handle.0_uri: strip_prefix /api
+      caddy.route.0_handle.1_reverse_proxy: "{{upstreams 3000}}"
+      caddy.route.1_handle: /*
+      caddy.route.1_handle.0_reverse_proxy: "{{upstreams 3000}}"
+      caddy_ingress_network: proxy
+    label_file:
+      - ./labels/common.labels
+    volumes:
+      - type: volume
+        source: web-data
+        target: /app/data
+        volume:
+          nocopy: true
+          subpath: tenant-a
+      - type: bind
+        source: ./config
+        target: /app/config
+        read_only: true
+        bind:
+          create_host_path: true
+          propagation: rprivate
+      - type: tmpfs
+        target: /app/cache
+        tmpfs:
+          size: 67108864
+          mode: 1777
+    configs:
+      - source: app_config
+        target: /app/config.yaml
+        uid: "1000"
+        gid: "1000"
+        mode: 0444
+    secrets:
+      - source: db_password
+        target: db_password
+        mode: 0400
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+      start_interval: 2s
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt:
+      - no-new-privileges:true
+    sysctls:
+      net.core.somaxconn: "1024"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    develop:
+      watch:
+        - action: sync
+          path: ./src
+          target: /app/src
+          ignore: [node_modules/]
+          initial_sync: true
+        - action: rebuild
+          path: package.json
+        - action: restart
+          path: .env
+    deploy:
+      mode: replicated
+      replicas: 3
+      endpoint_mode: vip
+      placement:
+        constraints:
+          - node.role == worker
+          - node.labels.region == eu-central
+        preferences:
+          - spread: node.labels.zone
+        max_replicas_per_node: 2
+      update_config:
+        parallelism: 2
+        delay: 10s
+        monitor: 30s
+        max_failure_ratio: 0.2
+        failure_action: rollback
+        order: start-first
+      rollback_config:
+        parallelism: 1
+        delay: 5s
+        monitor: 20s
+        failure_action: pause
+        order: stop-first
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 2m
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
+          pids: 512
+        reservations:
+          cpus: "0.5"
+          memory: 256m
+          generic_resources:
+            - discrete_resource_spec:
+                kind: GPU
+                value: 1
+      labels:
+        traefik.enable: "true"
+        traefik.swarm.network: proxy
+        traefik.http.routers.web.rule: Host(`app.example.com`)
+        traefik.http.services.web.loadbalancer.server.port: "3000"
+        caddy: app.example.com
+        caddy.reverse_proxy: "{{upstreams 3000}}"
+        caddy_ingress_network: proxy
+
+  api:
+    build:
+      context: ./api
+      target: runtime
+    image: ghcr.io/mleem97/genposed-api:${APP_TAG:-latest}
+    command: ["node", "dist/server.js"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?}
+      REDIS_URL: redis://redis:6379
+    expose: ["4000"]
+    networks: [app, proxy]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.api.rule: Host(`api.example.com`)
+      traefik.http.routers.api.entrypoints: websecure
+      traefik.http.routers.api.tls: "true"
+      traefik.http.services.api.loadbalancer.server.port: "4000"
+
+  worker:
+    image: ghcr.io/mleem97/genposed-api:${APP_TAG:-latest}
+    command: ["node", "dist/worker.js"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?}
+      REDIS_URL: redis://redis:6379
+    networks: [app]
+    exclude_from_hc: true
+    profiles: [workers]
+    deploy:
+      mode: replicated-job
+      replicas: 4
+      restart_policy:
+        condition: none
+
+  migration:
+    image: ghcr.io/mleem97/genposed-api:${APP_TAG:-latest}
+    command: ["node", "dist/migrate.js"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?}
+    networks: [app]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    exclude_from_hc: true
+    profiles: [migration]
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-genposed}
+      POSTGRES_USER: ${SERVICE_USER_POSTGRES:-genposed}
+      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_POSTGRES:?}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks: [app]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    shm_size: 256m
+
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    networks: [app]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  traefik:
+    image: traefik:v3.7
+    command:
+      - --api.dashboard=true
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=proxy
+      - --providers.swarm=true
+      - --providers.swarm.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.postgres.address=:5432
+      - --entrypoints.dns.address=:53/udp
+      - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:?}
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --metrics.prometheus=true
+      - --ping=true
+    ports:
+      - target: 80
+        published: "80"
+        protocol: tcp
+        mode: host
+      - target: 443
+        published: "443"
+        protocol: tcp
+        mode: host
+      - target: 53
+        published: "53"
+        protocol: udp
+        mode: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik-acme:/letsencrypt
+    networks: [proxy]
+    deploy:
+      mode: global
+      placement:
+        constraints:
+          - node.role == manager
+
+  caddy:
+    image: lucaslorentz/caddy-docker-proxy:ci-alpine
+    environment:
+      CADDY_DOCKER_MODE: ${CADDY_DOCKER_MODE:-standalone}
+      CADDY_DOCKER_SOCKETS: unix:///var/run/docker.sock
+      CADDY_INGRESS_NETWORKS: proxy
+      CADDY_DOCKER_LABEL_PREFIX: caddy
+      CADDY_DOCKER_PROXY_SERVICE_TASKS: "true"
+      CADDY_DOCKER_PROCESS_CADDYFILE: "true"
+      CADDY_DOCKER_SCAN_STOPPED_CONTAINERS: "false"
+      CADDY_DOCKER_POLLING_INTERVAL: 30s
+      CADDY_DOCKER_EVENT_THROTTLE_INTERVAL: 100ms
+    ports:
+      - "8080:80"
+      - "8443:443"
+      - "8443:443/udp"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [proxy]
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+
+  postgres-tcp-proxy:
+    image: alpine:3.22
+    command: ["sleep", "infinity"]
+    networks: [app, proxy]
+    labels:
+      traefik.enable: "true"
+      traefik.tcp.routers.postgres.rule: HostSNI(`db.example.com`)
+      traefik.tcp.routers.postgres.entrypoints: postgres
+      traefik.tcp.routers.postgres.service: postgres
+      traefik.tcp.routers.postgres.tls: "true"
+      traefik.tcp.routers.postgres.tls.passthrough: "true"
+      traefik.tcp.services.postgres.loadbalancer.server.port: "5432"
+      traefik.tcp.middlewares.tcp-ipallow.ipallowlist.sourcerange: 10.0.0.0/8
+
+  dns-udp:
+    image: coredns/coredns:latest
+    command: ["-conf", "/etc/coredns/Corefile"]
+    expose: ["53/udp"]
+    networks: [proxy]
+    labels:
+      traefik.enable: "true"
+      traefik.udp.routers.dns.entrypoints: dns
+      traefik.udp.routers.dns.service: dns
+      traefik.udp.services.dns.loadbalancer.server.port: "53"
+
+  gpu-worker:
+    image: nvidia/cuda:12.8.1-runtime-ubuntu24.04
+    command: ["bash", "-lc", "nvidia-smi && sleep infinity"]
+    profiles: [gpu]
+    gpus: all
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu, compute, utility]
+
+  low-level-runtime-demo:
+    image: alpine:3.22
+    command: ["sleep", "infinity"]
+    profiles: [host-specific]
+    privileged: false
+    read_only: true
+    cap_add: [NET_ADMIN]
+    cap_drop: [ALL]
+    cgroup: private
+    cgroup_parent: genposed.slice
+    cpus: "1.5"
+    cpuset: "0-2"
+    cpu_shares: 1024
+    mem_limit: 1g
+    mem_reservation: 256m
+    memswap_limit: 2g
+    oom_score_adj: -500
+    pids_limit: 256
+    blkio_config:
+      weight: 500
+      device_read_bps:
+        - path: /dev/sda
+          rate: 12mb
+    device_cgroup_rules:
+      - "c 188:* rmw"
+    devices:
+      - /dev/ttyUSB0:/dev/ttyUSB0:rwm
+    ipc: private
+    pid: host
+    uts: host
+    userns_mode: host
+    isolation: default
+    storage_opt:
+      size: 1G
+
+  external-provider-demo:
+    provider:
+      type: awesomecloud
+      options:
+        type: mysql
+        tier: db-premium
+    profiles: [provider-experimental]
+
+  inherited-service:
+    extends:
+      file: ./compose.base.yaml
+      service: app-base
+    profiles: [extends-demo]
+
+networks:
+  app:
+    name: genposed-app
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: br-genposed
+    attachable: true
+    internal: true
+    enable_ipv4: true
+    enable_ipv6: true
+    labels:
+      com.example.purpose: application
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16
+          ip_range: 172.28.10.0/24
+          gateway: 172.28.0.1
+          aux_addresses:
+            reserved: 172.28.0.2
+  proxy:
+    name: proxy
+    external: true
+  observability:
+    driver: bridge
+    attachable: true
+
+volumes:
+  web-data:
+    name: genposed-web-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${WEB_DATA_PATH:-./.data/web}
+    labels:
+      com.example.backup: daily
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+  traefik-acme:
+    driver: local
+  caddy-data:
+    driver: local
+  caddy-config:
+    driver: local
+  external-media:
+    name: shared-media
+    external: true
+
+configs:
+  app_config:
+    content: |
+      server:
+        port: 3000
+      telemetry:
+        enabled: false
+  caddy_global:
+    file: ./Caddyfile.global
+  generated_from_env:
+    environment: INLINE_CONFIG
+  external_config:
+    name: company-shared-config
+    external: true
+
+secrets:
+  db_password:
+    environment: SERVICE_PASSWORD_POSTGRES
+  npm_token:
+    file: ./.secrets/npm_token
+  traefik_htpasswd:
+    file: ./.secrets/traefik_htpasswd
+  external_secret:
+    name: company-shared-secret
+    external: true
+
+models:
+  assistant:
+    model: ai/example-model
+    context_size: 32768
+    runtime_extensions:
+      - thinking
+      - tools
+  remote-model:
+    endpoint: https://models.example.com/v1
+    model: example/remote-model

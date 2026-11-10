@@ -6,7 +6,9 @@
 
 genposed is intended for people who want the flexibility of Docker Compose without requiring every operator to hand-edit YAML or manually configure Git providers, reverse proxies, build workers, runners, and target servers.
 
-The initial product is deliberately **single-tenant**: one installation, one workspace, and one primary environment with one or more projects. The internal model is tenant-aware so that isolated tenants and horizontally scalable shared build capacity can be introduced later without replacing the core architecture.
+The initial product is one operator-controlled installation with operator-owned and customer-owned projects. Customer UI access is optional per customer and permissions are scoped through RBAC. This does not make shared runtime execution safe by itself: customer workloads may run together only on a target whose isolation boundary has been explicitly designed, implemented, and verified. If policy cannot be met, deployment must be rejected.
+
+The first usable release is expected to include GitHub and Forgejo/Gitea deployment sources, customer start/stop/restart actions where authorized, and Cloudflare DNS automation. GitLab, native runner management, and the broader rollout strategies below are product directions, not first-release commitments. See the [requirements and delivery status matrix](docs/REQUIREMENTS_MATRIX.md) for current implementation evidence and unresolved scope.
 
 ## Goals
 
@@ -30,7 +32,7 @@ The initial product is deliberately **single-tenant**: one installation, one wor
 4. **Build servers provide capacity; builders provide isolation.** Each tenant receives isolated credentials, cache namespaces, limits, and builder state.
 5. **Deployments are immutable records.** Every release is tied to a commit, source digest, rendered Compose digest, build result, and rollout history.
 6. **Unsafe behavior is explicit.** Privileged containers, host networking, Docker socket mounts, dangerous capabilities, and destructive commands require policy decisions and audit records.
-7. **Single-tenant first, multi-tenant ready.** The first release stays operationally simple while retaining workspace and tenant scope internally.
+7. **One operator installation with customer scopes from the first usable release.** Independent-workspace tenancy can follow, but the operator/customer boundary, optional customer UI access, and scoped permissions cannot be deferred.
 
 ## Product areas
 
@@ -133,7 +135,7 @@ The same physical machine may initially host the control plane, build agent, run
 
 ## Current repository status
 
-The repository currently contains the project definition and an early schema-driven Compose editor prototype on the active development branch. Production deployment services, agents, provider integrations, and the build scheduler are planned work rather than finished capabilities.
+The repository contains the project definition and an early schema-driven Compose editor prototype under `userinterface/`. In this working tree the UI directory and current delivery artifacts are untracked on `main`; the remote feature branches are separate histories and have not been merged into `main`. Production deployment services, agents, provider integrations, and the build scheduler are planned work rather than finished capabilities.
 
 See:
 
@@ -146,6 +148,7 @@ See:
 - [Build farm](docs/BUILD_FARM.md)
 - [Security architecture](docs/SECURITY_ARCHITECTURE.md)
 - [Roadmap](docs/ROADMAP.md)
+- [Requirements and delivery status](docs/REQUIREMENTS_MATRIX.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
 
@@ -182,7 +185,7 @@ docs/
 
 ## Development
 
-The current UI prototype is located under `userinterface/` on the development branch.
+The current UI prototype is located under `userinterface/`.
 
 ```bash
 cd userinterface

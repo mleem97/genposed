@@ -6,7 +6,7 @@
 
 ## Context
 
-The product starts single-tenant but is expected to support multiple tenants sharing build-server capacity. A shared rootful Docker daemon leaks cache, images, credentials, workspaces, and privileged control across workloads.
+The first usable product has operator and customer project scopes, and later may support independent tenants sharing build-server capacity. A shared rootful Docker daemon leaks cache, images, credentials, workspaces, and privileged control across workloads.
 
 ## Decision
 
@@ -25,7 +25,7 @@ Rootless BuildKit is the minimum preferred isolation. Ephemeral builders and vir
 
 ## Consequences
 
-- Single-tenant installations can start with one persistent builder.
+- Single-operator installations can start with one persistent builder only for workloads inside the same trust scope; customer workloads require the isolation policy selected for that customer.
 - Adding build servers does not change project configuration.
 - Cache sharing is explicit rather than accidental.
 - Builder lifecycle and scheduling become first-class platform responsibilities.

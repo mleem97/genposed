@@ -1,0 +1,2 @@
+CREATE UNIQUE INDEX "account_provider_account_unique" ON "account" USING btree ("provider_id","account_id");--> statement-breakpoint
+ALTER TABLE "user" ADD CONSTRAINT "user_role_check" CHECK ("user"."role" IN ('operator', 'customer'));
